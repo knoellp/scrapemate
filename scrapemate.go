@@ -551,6 +551,13 @@ func (s *ScrapeMate) startWorker(ctx context.Context) {
 
 			s.log.Info("restarted job provider")
 		case job := <-jobc:
+			// Bump lastActivityAt at job *start* so the exit-on-inactivity
+			// check counts a long-running job as active, not as silence.
+			// Without this, a single seed job that takes longer than
+			// exitOnInactivityDuration gets killed by the ticker before it
+			// can complete, even though it's making progress.
+			s.stats.touchActivity()
+
 			ans, next, err := s.DoJob(ctx, job)
 			if err != nil {
 				s.log.Error("error while processing job", "error", err)
@@ -638,5 +645,16 @@ func (o *stats) incJobsFailed() {
 	defer o.l.Unlock()
 
 	o.numOfJobsFailed++
+	o.lastActivityAt = time.Now().UTC()
+}
+
+// touchActivity bumps lastActivityAt without changing job counts.
+// Called when a worker starts processing a job — so a single seed that
+// runs longer than exitOnInactivityDuration is treated as active progress
+// instead of silent inactivity.
+func (o *stats) touchActivity() {
+	o.l.Lock()
+	defer o.l.Unlock()
+
 	o.lastActivityAt = time.Now().UTC()
 }
