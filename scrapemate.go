@@ -266,8 +266,17 @@ func (s *ScrapeMate) Start() error {
 					"speed", fmt.Sprintf("%.2f jobs/min", perMinute),
 				)
 
-				if s.exitOnInactivity && time.Now().UTC().Sub(lastActivityAt) > s.exitOnInactivityDuration {
-					err := fmt.Errorf("%w: %s", ErrInactivityTimeout, lastActivityAt.Format(time.RFC3339))
+				// Use startTime as the inactivity baseline if no job has completed yet
+				// (lastActivityAt zero-value would otherwise trigger immediate exit at
+				// the first ticker tick whenever the seed job takes longer than
+				// exitOnInactivityDuration/2). This way "inactivity" means "no job
+				// progress within the window from the most recent activity OR app start".
+				baseline := lastActivityAt
+				if baseline.IsZero() {
+					baseline = startTime
+				}
+				if s.exitOnInactivity && time.Now().UTC().Sub(baseline) > s.exitOnInactivityDuration {
+					err := fmt.Errorf("%w: %s", ErrInactivityTimeout, baseline.Format(time.RFC3339))
 
 					s.log.Info("exiting because of inactivity", "error", err)
 					s.cancelFn(err)
