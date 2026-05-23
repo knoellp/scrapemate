@@ -58,6 +58,12 @@ browser engine is used and whether to override the browser binary.
 | `WithJSBrowserType(s string)` | `""` (Chromium) | Select engine: `"chromium"`, `"firefox"`, or `"webkit"` |
 | `WithJSExecutablePath(p string)` | `""` (Playwright cache) | Path to a custom browser binary |
 
+By design these options are opt-in: omitting them preserves the existing
+Chromium-default behavior. They were introduced so downstream consumers can
+support browsers other than Chromium — for example, Firefox-based anti-detect
+builds like [Camoufox](https://camoufox.com) for sites with aggressive Chromium
+fingerprinting — without changing scrapemate's default for everyone else.
+
 Both options are additive — existing code that calls `WithJS()` without them is
 unaffected.
 
