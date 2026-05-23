@@ -51,12 +51,16 @@ func (o *stealthFetch) Fetch(ctx context.Context, job scrapemate.IJob) scrapemat
 	session := azuretls.NewSessionWithContext(ctx)
 	defer session.Close()
 
-	if o.rotator != nil {
+	// R1.5: per-job proxy takes precedence over app-level round-robin.
+	proxyURL := scrapemate.ResolveJobProxyURL(job)
+	if proxyURL == "" && o.rotator != nil {
+		proxyURL = o.rotator.Next().FullURL()
+	}
+
+	if proxyURL != "" {
 		session.InsecureSkipVerify = true
 
-		proxy := o.rotator.Next()
-
-		if err := session.SetProxy(proxy.FullURL()); err != nil {
+		if err := session.SetProxy(proxyURL); err != nil {
 			return scrapemate.Response{
 				Error: err,
 			}

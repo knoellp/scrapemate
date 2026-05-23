@@ -83,6 +83,34 @@ This is useful for anti-detect setups where a patched Firefox build (such as
 [Camoufox](https://camoufox.com)) must be used instead of the Playwright-managed
 binary.
 
+## Per-Job Proxy
+
+By default scrapemate uses a round-robin `WithProxies` rotator for all jobs.
+If you need a different proxy per job — for example a sticky session ID for
+account-specific routing or geo-targeting — implement the `ProxyProvider`
+interface on your job type:
+
+```go
+type MyJob struct {
+    scrapemate.Job
+    SessionID string
+}
+
+// GetProxyURL implements scrapemate.ProxyProvider.
+func (j *MyJob) GetProxyURL() string {
+    return fmt.Sprintf("http://user-session-%s:pass@gate.example.com:7000", j.SessionID)
+}
+```
+
+Jobs that do not implement `ProxyProvider` continue to use the app-level
+`WithProxies` round-robin as before — **no action required** for existing code.
+Empty return strings from `GetProxyURL()` are treated as "no preference" and
+also fall back to round-robin.
+
+Fetchers that currently honour `ProxyProvider`: `jshttp` (creates a fresh
+`BrowserContext` per job on a pool browser), `stealth` (calls
+`session.SetProxy`), `nethttp` (builds a per-request `http.Transport`).
+
 ## Installation
 
 ```

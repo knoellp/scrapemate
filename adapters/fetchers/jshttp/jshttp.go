@@ -2,6 +2,7 @@ package jshttp
 
 import (
 	"context"
+	"net/url"
 
 	"github.com/playwright-community/playwright-go"
 
@@ -156,16 +157,34 @@ func (o *jsFetch) PutBrowser(ctx context.Context, b *browser) {
 	}
 }
 
-// Fetch fetches the url specicied by the job and returns the response
+// Fetch fetches the url specicied by the job and returns the response.
+// If the job implements scrapemate.ProxyProvider and returns a non-empty URL,
+// a fresh per-job BrowserContext is created on a pool browser with that proxy
+// (Strategie C: browser reuse + per-fetch context). Otherwise the existing
+// pool-browser + pool-context path is used unchanged.
 func (o *jsFetch) Fetch(ctx context.Context, job scrapemate.IJob) scrapemate.Response {
-	browser, err := o.GetBrowser(ctx)
+	jobProxyURL := scrapemate.ResolveJobProxyURL(job)
+
+	if jobProxyURL != "" {
+		// R1.5: per-job proxy → fresh short-lived BrowserContext on a pool browser.
+		return o.fetchWithJobProxy(ctx, job, jobProxyURL)
+	}
+
+	// Unchanged path: pool browser with pool context (round-robin proxy).
+	return o.fetchDefault(ctx, job)
+}
+
+// fetchDefault is the original Fetch logic: pool browser + pool context with
+// page reuse. Unchanged from pre-R1.5 behaviour.
+func (o *jsFetch) fetchDefault(ctx context.Context, job scrapemate.IJob) scrapemate.Response {
+	br, err := o.GetBrowser(ctx)
 	if err != nil {
 		return scrapemate.Response{
 			Error: err,
 		}
 	}
 
-	defer o.PutBrowser(ctx, browser)
+	defer o.PutBrowser(ctx, br)
 
 	if job.GetTimeout() > 0 {
 		var cancel context.CancelFunc
@@ -176,14 +195,14 @@ func (o *jsFetch) Fetch(ctx context.Context, job scrapemate.IJob) scrapemate.Res
 
 	var page playwright.Page
 
-	if len(browser.ctx.Pages()) > 0 {
-		page = browser.ctx.Pages()[0]
+	if len(br.ctx.Pages()) > 0 {
+		page = br.ctx.Pages()[0]
 
-		for i := 1; i < len(browser.ctx.Pages()); i++ {
-			browser.ctx.Pages()[i].Close()
+		for i := 1; i < len(br.ctx.Pages()); i++ {
+			br.ctx.Pages()[i].Close()
 		}
 	} else {
-		page, err = browser.ctx.NewPage()
+		page, err = br.ctx.NewPage()
 		if err != nil {
 			return scrapemate.Response{
 				Error: err,
@@ -196,20 +215,116 @@ func (o *jsFetch) Fetch(ctx context.Context, job scrapemate.IJob) scrapemate.Res
 		page.SetDefaultTimeout(float64(job.GetTimeout().Milliseconds()))
 	}
 
-	browser.page0Usage++
-	browser.browserUsage++
+	br.page0Usage++
+	br.browserUsage++
 
 	defer func() {
-		if o.pageReuseLimit == 0 || browser.page0Usage >= o.pageReuseLimit {
+		if o.pageReuseLimit == 0 || br.page0Usage >= o.pageReuseLimit {
 			_ = page.Close()
 
-			browser.page0Usage = 0
+			br.page0Usage = 0
 		}
 	}()
 
 	wrappedPage := playwrightadapter.NewPage(page)
 
 	return job.BrowserActions(ctx, wrappedPage)
+}
+
+// fetchWithJobProxy creates a fresh BrowserContext on a pool browser using the
+// job-specific proxy URL. The browser is returned to the pool after the fetch;
+// the context is closed immediately (no page reuse for per-job contexts).
+// browserUsage is incremented so BrowserReuseLimit continues to apply.
+func (o *jsFetch) fetchWithJobProxy(ctx context.Context, job scrapemate.IJob, jobProxyURL string) scrapemate.Response {
+	br, err := o.GetBrowser(ctx)
+	if err != nil {
+		return scrapemate.Response{Error: err}
+	}
+
+	defer o.PutBrowser(ctx, br)
+
+	// Apply job timeout.
+	if job.GetTimeout() > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, job.GetTimeout())
+
+		defer cancel()
+	}
+
+	const defaultWidth, defaultHeight = 1920, 1080
+
+	ua := o.ua
+	if ua == "" {
+		ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+	}
+
+	// Fresh per-job BrowserContext with the job-specific proxy.
+	jobCtx, err := br.browser.NewContext(playwright.BrowserNewContextOptions{
+		UserAgent: playwright.String(ua),
+		Viewport: &playwright.Size{
+			Width:  defaultWidth,
+			Height: defaultHeight,
+		},
+		Proxy: parseProxyURL(jobProxyURL),
+	})
+	if err != nil {
+		return scrapemate.Response{Error: err}
+	}
+
+	defer jobCtx.Close()
+
+	page, err := jobCtx.NewPage()
+	if err != nil {
+		return scrapemate.Response{Error: err}
+	}
+
+	defer page.Close()
+
+	if job.GetTimeout() > 0 {
+		page.SetDefaultTimeout(float64(job.GetTimeout().Milliseconds()))
+	}
+
+	// Count browser usage so BrowserReuseLimit continues to apply.
+	br.browserUsage++
+
+	wrappedPage := playwrightadapter.NewPage(page)
+
+	return job.BrowserActions(ctx, wrappedPage)
+}
+
+// parseProxyURL converts a full proxy URL (http://user:pass@host:port) into a
+// *playwright.Proxy suitable for BrowserNewContextOptions.Proxy.
+// Returns nil if the URL is empty or unparseable.
+func parseProxyURL(rawURL string) *playwright.Proxy {
+	if rawURL == "" {
+		return nil
+	}
+
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil
+	}
+
+	// Server is scheme + host (without credentials).
+	server := u.Scheme + "://" + u.Host
+
+	proxy := &playwright.Proxy{
+		Server: server,
+	}
+
+	if u.User != nil {
+		username := u.User.Username()
+		if username != "" {
+			proxy.Username = playwright.String(username)
+		}
+
+		password, hasPassword := u.User.Password()
+		if hasPassword {
+			proxy.Password = playwright.String(password)
+		}
+	}
+
+	return proxy
 }
 
 type browser struct {

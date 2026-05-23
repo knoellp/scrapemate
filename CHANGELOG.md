@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `ProxyProvider` interface — optional capability for jobs that need a per-job
+  proxy URL, overriding the app-level `WithProxies` round-robin. Implement
+  `GetProxyURL() string` on your job type to opt in. Backward-compatible —
+  jobs that do not implement the interface continue to use the existing
+  `WithProxies` round-robin without any code changes. Fetchers that support
+  per-job proxy: `jshttp`, `stealth`, `nethttp`.
+- `ResolveJobProxyURL(job IJob) string` — package-level helper that performs
+  the type-assertion for `ProxyProvider`. Fetchers call this once per `Fetch()`
+  before deciding which proxy to use.
+- `nethttp.NewWithRotator(netClient HTTPClient, rotator ProxyRotator)` — variant
+  of `nethttp.New` used by `scrapemateapp` when a rotator is configured.
+  Enables per-job proxy overrides via `ProxyProvider` while leaving the injected
+  client unchanged for jobs that do not implement the interface.
+
 - `JSFetcherOptions.BrowserType` — selects the Playwright browser engine for JS
   rendering. Accepted values: `"chromium"` (default, empty string), `"firefox"`,
   `"webkit"`. Empty string retains existing Chromium behaviour; no action needed
