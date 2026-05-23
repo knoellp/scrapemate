@@ -184,9 +184,12 @@ func (app *ScrapemateApp) getFetcher() (scrapemate.HTTPFetcher, error) {
 
 			if rotator != nil {
 				netClient.Transport = rotator
+				// R1.5: use NewWithRotator so Fetch() can intercept per-job
+				// proxy URLs from jobs that implement ProxyProvider.
+				httpFetcher = fetcher.NewWithRotator(netClient, rotator)
+			} else {
+				httpFetcher = fetcher.New(netClient)
 			}
-
-			httpFetcher = fetcher.New(netClient)
 		}
 	}
 
