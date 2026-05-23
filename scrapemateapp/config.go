@@ -159,6 +159,24 @@ func WithJSExecutablePath(p string) func(*jsOptions) {
 	}
 }
 
+// WithJSDisableSingleProcess disables Chromium's --single-process launch flag.
+//
+// Required for jobs that use per-job proxies (scrapemate.ProxyProvider):
+// single-process mode shares one renderer across all BrowserContexts and
+// cannot isolate the per-job context — closing a per-job BrowserContext tears
+// down the shared renderer, breaking subsequent fetches on the same browser.
+// Chromium only; no effect on Firefox or WebKit.
+//
+// Default (flag enabled, i.e. this option NOT set) is unchanged — existing
+// callers that do not use ProxyProvider are unaffected.
+//
+// Pass this as an option to WithJS:
+//
+//	scrapemateapp.WithJS(scrapemateapp.WithJSDisableSingleProcess())
+func WithJSDisableSingleProcess() func(*jsOptions) {
+	return func(o *jsOptions) { o.DisableSingleProcess = true }
+}
+
 // WithBrowserEngine is deprecated and kept as a compatibility no-op.
 func WithBrowserEngine(_ string) func(*jsOptions) {
 	return func(_ *jsOptions) {
@@ -196,6 +214,10 @@ type jsOptions struct {
 	// ExecutablePath, when non-empty, overrides the browser binary path.
 	// Use this to point at a custom binary such as Camoufox.
 	ExecutablePath string
+	// DisableSingleProcess, when true, omits --single-process from the Chromium
+	// launch flags. Set via WithJSDisableSingleProcess(). Default false preserves
+	// the existing --single-process behaviour.
+	DisableSingleProcess bool
 }
 
 type Config struct {

@@ -111,6 +111,19 @@ Fetchers that currently honour `ProxyProvider`: `jshttp` (creates a fresh
 `BrowserContext` per job on a pool browser), `stealth` (calls
 `session.SetProxy`), `nethttp` (builds a per-request `http.Transport`).
 
+> **Chromium users with `ProxyProvider` must also call `WithJSDisableSingleProcess`.**
+> Chromium's `--single-process` flag (enabled by default) shares one renderer
+> process across all `BrowserContext`s.  Closing a per-job context in that mode
+> tears down the shared renderer and breaks subsequent fetches.
+> `WithJSDisableSingleProcess` removes the flag so each context gets an isolated
+> renderer.  Firefox and WebKit are unaffected.
+>
+> ```go
+> scrapemateapp.WithJS(
+>     scrapemateapp.WithJSDisableSingleProcess(), // required for ProxyProvider + Chromium
+> )
+> ```
+
 ## Installation
 
 ```

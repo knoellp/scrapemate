@@ -23,6 +23,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Enables per-job proxy overrides via `ProxyProvider` while leaving the injected
   client unchanged for jobs that do not implement the interface.
 
+- `WithJSDisableSingleProcess()` — `WithJS` sub-option that disables Chromium's
+  `--single-process` launch flag. Required when using `ProxyProvider` jobs with
+  the jshttp fetcher: in single-process mode all `BrowserContext`s share one
+  renderer process; closing a per-job context tears down the shared renderer,
+  breaking subsequent fetches. Chromium only; no effect on Firefox or WebKit.
+  Default (flag enabled) is unchanged — existing callers that do not use
+  `ProxyProvider` are unaffected.
+  Usage: `scrapemateapp.WithJS(scrapemateapp.WithJSDisableSingleProcess())`.
+- `JSFetcherOptions.DisableSingleProcess bool` — low-level counterpart of
+  `WithJSDisableSingleProcess` for callers that construct `JSFetcherOptions`
+  directly.
+
 - `JSFetcherOptions.BrowserType` — selects the Playwright browser engine for JS
   rendering. Accepted values: `"chromium"` (default, empty string), `"firefox"`,
   `"webkit"`. Empty string retains existing Chromium behaviour; no action needed

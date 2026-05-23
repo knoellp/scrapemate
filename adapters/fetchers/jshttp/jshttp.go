@@ -26,6 +26,13 @@ type JSFetcherOptions struct {
 	// ExecutablePath, when non-empty, overrides the browser binary path.
 	// Use this to point at a custom binary such as Camoufox.
 	ExecutablePath string
+	// DisableSingleProcess, when true, omits the --single-process Chromium
+	// launch flag.  Set this when using per-job proxies (ProxyProvider): in
+	// single-process mode all BrowserContexts share one renderer process and
+	// closing a per-job context tears down the shared renderer, breaking
+	// subsequent fetches.  Has no effect on Firefox or WebKit.
+	// Default (false) preserves the existing --single-process behaviour.
+	DisableSingleProcess bool
 }
 
 // browsersToInstall returns the Playwright browser list for the given
@@ -73,21 +80,22 @@ func New(params JSFetcherOptions) (scrapemate.HTTPFetcher, error) {
 	}
 
 	ans := jsFetch{
-		pw:                pw,
-		headless:          params.Headless,
-		disableImages:     params.DisableImages,
-		pool:              make(chan *browser, params.PoolSize),
-		rotator:           params.Rotator,
-		pageReuseLimit:    params.PageReuseLimit,
-		browserReuseLimit: params.BrowserReuseLimit,
-		ua:                params.UserAgent,
-		proxyPool:         pool,
-		browserType:       params.BrowserType,
-		executablePath:    params.ExecutablePath,
+		pw:                   pw,
+		headless:             params.Headless,
+		disableImages:        params.DisableImages,
+		pool:                 make(chan *browser, params.PoolSize),
+		rotator:              params.Rotator,
+		pageReuseLimit:       params.PageReuseLimit,
+		browserReuseLimit:    params.BrowserReuseLimit,
+		ua:                   params.UserAgent,
+		proxyPool:            pool,
+		browserType:          params.BrowserType,
+		executablePath:       params.ExecutablePath,
+		disableSingleProcess: params.DisableSingleProcess,
 	}
 
 	for range params.PoolSize {
-		b, err := newBrowser(pw, params.Headless, params.DisableImages, ans.proxyPool, params.UserAgent, params.BrowserType, params.ExecutablePath)
+		b, err := newBrowser(pw, params.Headless, params.DisableImages, ans.proxyPool, params.UserAgent, params.BrowserType, params.ExecutablePath, params.DisableSingleProcess)
 		if err != nil {
 			_ = ans.Close()
 			return nil, err
@@ -100,17 +108,18 @@ func New(params JSFetcherOptions) (scrapemate.HTTPFetcher, error) {
 }
 
 type jsFetch struct {
-	pw                *playwright.Playwright
-	headless          bool
-	disableImages     bool
-	pool              chan *browser
-	rotator           scrapemate.ProxyRotator
-	pageReuseLimit    int
-	browserReuseLimit int
-	ua                string
-	proxyPool         *ProxyPool
-	browserType       string
-	executablePath    string
+	pw                   *playwright.Playwright
+	headless             bool
+	disableImages        bool
+	pool                 chan *browser
+	rotator              scrapemate.ProxyRotator
+	pageReuseLimit       int
+	browserReuseLimit    int
+	ua                   string
+	proxyPool            *ProxyPool
+	browserType          string
+	executablePath       string
+	disableSingleProcess bool
 }
 
 func (o *jsFetch) GetBrowser(ctx context.Context) (*browser, error) {
@@ -126,7 +135,7 @@ func (o *jsFetch) GetBrowser(ctx context.Context) (*browser, error) {
 	default:
 	}
 
-	return newBrowser(o.pw, o.headless, o.disableImages, o.proxyPool, o.ua, o.browserType, o.executablePath)
+	return newBrowser(o.pw, o.headless, o.disableImages, o.proxyPool, o.ua, o.browserType, o.executablePath, o.disableSingleProcess)
 }
 
 func (o *jsFetch) Close() error {
@@ -350,36 +359,52 @@ func selectBrowserType(pw *playwright.Playwright, bt string) playwright.BrowserT
 	}
 }
 
-func newBrowser(pw *playwright.Playwright, headless, disableImages bool, proxyPool *ProxyPool, ua, browserType, executablePath string) (*browser, error) {
-	opts := playwright.BrowserTypeLaunchOptions{
-		Headless: playwright.Bool(headless),
-		Args: []string{
-			`--start-maximized`,
-			`--no-default-browser-check`,
-			`--disable-dev-shm-usage`,
-			`--no-sandbox`,
-			`--disable-setuid-sandbox`,
-			`--no-zygote`,
-			`--disable-gpu`,
-			`--mute-audio`,
-			`--disable-extensions`,
-			`--single-process`,
-			`--disable-breakpad`,
-			`--disable-features=TranslateUI,BlinkGenPropertyTrees`,
-			`--disable-ipc-flooding-protection`,
-			`--enable-features=NetworkService,NetworkServiceInProcess`,
-			"--enable-features=NetworkService",
-			`--disable-default-apps`,
-			`--disable-notifications`,
-			`--disable-webgl`,
-			`--disable-blink-features=AutomationControlled`,
-			"--ignore-certificate-errors",
-			"--ignore-certificate-errors-spki-list",
-			"--disable-web-security",
-		},
+// buildChromiumArgs builds the Chromium launch-flag slice.
+//
+// disableImages appends --blink-settings=imagesEnabled=false when true.
+// disableSingleProcess omits --single-process when true; when false (the
+// default) --single-process is included, preserving the upstream default.
+//
+// Extracting the flag list into a testable helper allows unit tests to verify
+// the backward-compat contract (--single-process present by default, absent
+// when opted out) without launching a real browser.
+func buildChromiumArgs(disableImages, disableSingleProcess bool) []string {
+	args := []string{
+		`--start-maximized`,
+		`--no-default-browser-check`,
+		`--disable-dev-shm-usage`,
+		`--no-sandbox`,
+		`--disable-setuid-sandbox`,
+		`--no-zygote`,
+		`--disable-gpu`,
+		`--mute-audio`,
+		`--disable-extensions`,
+		`--disable-breakpad`,
+		`--disable-features=TranslateUI,BlinkGenPropertyTrees`,
+		`--disable-ipc-flooding-protection`,
+		`--enable-features=NetworkService,NetworkServiceInProcess`,
+		"--enable-features=NetworkService",
+		`--disable-default-apps`,
+		`--disable-notifications`,
+		`--disable-webgl`,
+		`--disable-blink-features=AutomationControlled`,
+		"--ignore-certificate-errors",
+		"--ignore-certificate-errors-spki-list",
+		"--disable-web-security",
+	}
+	if !disableSingleProcess {
+		args = append(args, "--single-process")
 	}
 	if disableImages {
-		opts.Args = append(opts.Args, `--blink-settings=imagesEnabled=false`)
+		args = append(args, `--blink-settings=imagesEnabled=false`)
+	}
+	return args
+}
+
+func newBrowser(pw *playwright.Playwright, headless, disableImages bool, proxyPool *ProxyPool, ua, browserType, executablePath string, disableSingleProcess bool) (*browser, error) {
+	opts := playwright.BrowserTypeLaunchOptions{
+		Headless: playwright.Bool(headless),
+		Args:     buildChromiumArgs(disableImages, disableSingleProcess),
 	}
 	if executablePath != "" {
 		opts.ExecutablePath = playwright.String(executablePath)
