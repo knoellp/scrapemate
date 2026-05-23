@@ -54,7 +54,8 @@ func (o *stealthFetch) Fetch(ctx context.Context, job scrapemate.IJob) scrapemat
 	// R1.5: per-job proxy takes precedence over app-level round-robin.
 	proxyURL := scrapemate.ResolveJobProxyURL(job)
 	if proxyURL == "" && o.rotator != nil {
-		proxyURL = o.rotator.Next().FullURL()
+		rotatorProxy := o.rotator.Next()
+		proxyURL = rotatorProxy.FullURL()
 	}
 
 	if proxyURL != "" {
