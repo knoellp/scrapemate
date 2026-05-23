@@ -7,14 +7,15 @@ import (
 
 func (app *ScrapemateApp) getJSFetcher(rotator scrapemate.ProxyRotator) (scrapemate.HTTPFetcher, error) {
 	return jsfetcher.New(jsfetcher.JSFetcherOptions{
-		Headless:          !app.cfg.JSOpts.Headfull,
-		DisableImages:     app.cfg.JSOpts.DisableImages,
-		Rotator:           rotator,
-		PoolSize:          app.cfg.Concurrency,
-		PageReuseLimit:    app.cfg.PageReuseLimit,
-		BrowserReuseLimit: app.cfg.BrowserReuseLimit,
-		UserAgent:         app.cfg.JSOpts.UA,
-		BrowserType:       app.cfg.JSOpts.BrowserType,
-		ExecutablePath:    app.cfg.JSOpts.ExecutablePath,
+		Headless:             !app.cfg.JSOpts.Headfull,
+		DisableImages:        app.cfg.JSOpts.DisableImages,
+		Rotator:              rotator,
+		PoolSize:             app.cfg.Concurrency,
+		PageReuseLimit:       app.cfg.PageReuseLimit,
+		BrowserReuseLimit:    app.cfg.BrowserReuseLimit,
+		UserAgent:            app.cfg.JSOpts.UA,
+		BrowserType:          app.cfg.JSOpts.BrowserType,
+		ExecutablePath:       app.cfg.JSOpts.ExecutablePath,
+		DisableSingleProcess: app.cfg.JSOpts.DisableSingleProcess,
 	})
 }

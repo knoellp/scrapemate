@@ -179,15 +179,19 @@ func newFetchTarget(t *testing.T, body string) *httptest.Server {
 // ---- fetcher constructor helper --------------------------------------------
 
 // newTestFetcher creates a jsFetch with PoolSize=1, Headless=true, Chromium.
+// DisableSingleProcess is set to true so that per-job BrowserContext tests
+// work correctly: --single-process would share one renderer across all
+// contexts and closing a per-job context would break the pool context.
 // The test image has Chromium via playwright-go.
 func newTestFetcher(t *testing.T) *jsFetch {
 	t.Helper()
 	f, err := New(JSFetcherOptions{
-		Headless:          true,
-		DisableImages:     true,
-		PoolSize:          1,
-		PageReuseLimit:    0,
-		BrowserReuseLimit: 0,
+		Headless:             true,
+		DisableImages:        true,
+		PoolSize:             1,
+		PageReuseLimit:       0,
+		BrowserReuseLimit:    0,
+		DisableSingleProcess: true,
 	})
 	if err != nil {
 		t.Fatalf("New(JSFetcherOptions): %v", err)
