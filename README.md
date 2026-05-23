@@ -48,6 +48,35 @@ go run . -js
 ```
 
 
+## JS Fetcher Options
+
+When using `WithJS(...)` you can pass additional sub-options to control which
+browser engine is used and whether to override the browser binary.
+
+| Option | Default | Purpose |
+|---|---|---|
+| `WithJSBrowserType(s string)` | `""` (Chromium) | Select engine: `"chromium"`, `"firefox"`, or `"webkit"` |
+| `WithJSExecutablePath(p string)` | `""` (Playwright cache) | Path to a custom browser binary |
+
+Both options are additive — existing code that calls `WithJS()` without them is
+unaffected.
+
+### Example: Firefox with a custom Camoufox binary
+
+```go
+cfg, err := scrapemateapp.NewConfig(
+    writers,
+    scrapemateapp.WithJS(
+        scrapemateapp.WithJSBrowserType("firefox"),
+        scrapemateapp.WithJSExecutablePath("/opt/camoufox/firefox"),
+    ),
+)
+```
+
+This is useful for anti-detect setups where a patched Firefox build (such as
+[Camoufox](https://camoufox.com)) must be used instead of the Playwright-managed
+binary.
+
 ## Installation
 
 ```

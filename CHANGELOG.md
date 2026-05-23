@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `JSFetcherOptions.BrowserType` — selects the Playwright browser engine for JS
+  rendering. Accepted values: `"chromium"` (default, empty string), `"firefox"`,
+  `"webkit"`. Empty string retains existing Chromium behaviour; no action needed
+  by callers that do not set this field (backward-compatible).
+- `JSFetcherOptions.ExecutablePath` — optional path to a custom browser binary.
+  When set, overrides the Playwright-managed binary (e.g. point at a Camoufox
+  build for anti-detect Firefox).
+- `scrapemateapp.WithJSBrowserType(s string)` — `WithJS` sub-option that sets
+  `BrowserType`. Example: `WithJS(WithJSBrowserType("firefox"))`.
+- `scrapemateapp.WithJSExecutablePath(p string)` — `WithJS` sub-option that sets
+  `ExecutablePath`. Example:
+  `WithJS(WithJSBrowserType("firefox"), WithJSExecutablePath("/opt/camoufox/firefox"))`.
+
 ### Removed
 
 - Rod browser support, build tags, and related fetcher/page implementations
