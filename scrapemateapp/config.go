@@ -140,6 +140,25 @@ func WithUA(ua string) func(*jsOptions) {
 	}
 }
 
+// WithJSBrowserType sets the Playwright browser engine for JS-rendered scraping.
+// Accepted values: "chromium" (default), "firefox", "webkit".
+// Pass this as an option to WithJS: WithJS(WithJSBrowserType("firefox")).
+func WithJSBrowserType(s string) func(*jsOptions) {
+	return func(o *jsOptions) {
+		o.BrowserType = s
+	}
+}
+
+// WithJSExecutablePath sets a custom browser binary path for JS-rendered scraping.
+// When non-empty, the given path overrides the Playwright-managed browser binary.
+// Use this to point at a custom build such as Camoufox.
+// Pass this as an option to WithJS: WithJS(WithJSExecutablePath("/opt/camoufox/firefox")).
+func WithJSExecutablePath(p string) func(*jsOptions) {
+	return func(o *jsOptions) {
+		o.ExecutablePath = p
+	}
+}
+
 // WithBrowserEngine is deprecated and kept as a compatibility no-op.
 func WithBrowserEngine(_ string) func(*jsOptions) {
 	return func(_ *jsOptions) {
@@ -171,6 +190,12 @@ type jsOptions struct {
 	DisableImages bool
 	// UA is the user agent to use.
 	UA string
+	// BrowserType selects the Playwright browser engine.
+	// Accepted values: "chromium" (default, empty string), "firefox", "webkit".
+	BrowserType string
+	// ExecutablePath, when non-empty, overrides the browser binary path.
+	// Use this to point at a custom binary such as Camoufox.
+	ExecutablePath string
 }
 
 type Config struct {

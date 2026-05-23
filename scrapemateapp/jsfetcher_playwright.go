@@ -14,5 +14,7 @@ func (app *ScrapemateApp) getJSFetcher(rotator scrapemate.ProxyRotator) (scrapem
 		PageReuseLimit:    app.cfg.PageReuseLimit,
 		BrowserReuseLimit: app.cfg.BrowserReuseLimit,
 		UserAgent:         app.cfg.JSOpts.UA,
+		BrowserType:       app.cfg.JSOpts.BrowserType,
+		ExecutablePath:    app.cfg.JSOpts.ExecutablePath,
 	})
 }

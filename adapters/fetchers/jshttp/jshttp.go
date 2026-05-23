@@ -19,12 +19,32 @@ type JSFetcherOptions struct {
 	PageReuseLimit    int
 	BrowserReuseLimit int
 	UserAgent         string
+	// BrowserType selects which Playwright browser engine to use.
+	// Accepted values: "chromium" (default, empty string), "firefox", "webkit".
+	BrowserType string
+	// ExecutablePath, when non-empty, overrides the browser binary path.
+	// Use this to point at a custom binary such as Camoufox.
+	ExecutablePath string
+}
+
+// browsersToInstall returns the Playwright browser list for the given
+// BrowserType value.  An empty string or "chromium" both map to Chromium so
+// that callers that never set BrowserType are unaffected.
+func browsersToInstall(bt string) []string {
+	switch bt {
+	case "firefox":
+		return []string{"firefox"}
+	case "webkit":
+		return []string{"webkit"}
+	default:
+		return []string{"chromium"}
+	}
 }
 
 func New(params JSFetcherOptions) (scrapemate.HTTPFetcher, error) {
 	opts := []*playwright.RunOptions{
 		{
-			Browsers: []string{"chromium"},
+			Browsers: browsersToInstall(params.BrowserType),
 			Verbose:  true,
 		},
 	}
@@ -61,10 +81,12 @@ func New(params JSFetcherOptions) (scrapemate.HTTPFetcher, error) {
 		browserReuseLimit: params.BrowserReuseLimit,
 		ua:                params.UserAgent,
 		proxyPool:         pool,
+		browserType:       params.BrowserType,
+		executablePath:    params.ExecutablePath,
 	}
 
 	for range params.PoolSize {
-		b, err := newBrowser(pw, params.Headless, params.DisableImages, ans.proxyPool, params.UserAgent)
+		b, err := newBrowser(pw, params.Headless, params.DisableImages, ans.proxyPool, params.UserAgent, params.BrowserType, params.ExecutablePath)
 		if err != nil {
 			_ = ans.Close()
 			return nil, err
@@ -86,6 +108,8 @@ type jsFetch struct {
 	browserReuseLimit int
 	ua                string
 	proxyPool         *ProxyPool
+	browserType       string
+	executablePath    string
 }
 
 func (o *jsFetch) GetBrowser(ctx context.Context) (*browser, error) {
@@ -101,7 +125,7 @@ func (o *jsFetch) GetBrowser(ctx context.Context) (*browser, error) {
 	default:
 	}
 
-	return newBrowser(o.pw, o.headless, o.disableImages, o.proxyPool, o.ua)
+	return newBrowser(o.pw, o.headless, o.disableImages, o.proxyPool, o.ua, o.browserType, o.executablePath)
 }
 
 func (o *jsFetch) Close() error {
@@ -200,7 +224,18 @@ func (o *browser) Close() {
 	_ = o.browser.Close()
 }
 
-func newBrowser(pw *playwright.Playwright, headless, disableImages bool, proxyPool *ProxyPool, ua string) (*browser, error) {
+func selectBrowserType(pw *playwright.Playwright, bt string) playwright.BrowserType {
+	switch bt {
+	case "firefox":
+		return pw.Firefox
+	case "webkit":
+		return pw.WebKit
+	default:
+		return pw.Chromium
+	}
+}
+
+func newBrowser(pw *playwright.Playwright, headless, disableImages bool, proxyPool *ProxyPool, ua, browserType, executablePath string) (*browser, error) {
 	opts := playwright.BrowserTypeLaunchOptions{
 		Headless: playwright.Bool(headless),
 		Args: []string{
@@ -231,8 +266,13 @@ func newBrowser(pw *playwright.Playwright, headless, disableImages bool, proxyPo
 	if disableImages {
 		opts.Args = append(opts.Args, `--blink-settings=imagesEnabled=false`)
 	}
+	if executablePath != "" {
+		opts.ExecutablePath = playwright.String(executablePath)
+	}
 
-	br, err := pw.Chromium.Launch(opts)
+	bt := selectBrowserType(pw, browserType)
+
+	br, err := bt.Launch(opts)
 	if err != nil {
 		return nil, err
 	}
