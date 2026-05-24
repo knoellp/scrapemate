@@ -124,6 +124,49 @@ Fetchers that currently honour `ProxyProvider`: `jshttp` (creates a fresh
 > )
 > ```
 
+## Browser Request Hooks
+
+Some jobs need to observe or capture browser-level request and response headers
+— for example, to extract a Bearer token that a JavaScript SPA attaches to
+outbound API calls client-side.
+
+Scrapemate provides an optional `RequestHookProvider` interface that
+`BrowserPage` implementations may satisfy.  Always check for the capability via
+a type assertion so your job remains portable across adapters:
+
+```go
+func (j *MyJob) BrowserActions(ctx context.Context, page scrapemate.BrowserPage) scrapemate.Response {
+    if hook, ok := page.(scrapemate.RequestHookProvider); ok {
+        hook.OnRequest(func(url string, headers map[string]string) {
+            // headers keys are lower-cased; no blocking calls inside this handler.
+            if strings.Contains(url, "/api/v3/") {
+                if auth := headers["authorization"]; strings.HasPrefix(auth, "Bearer ") {
+                    captureToken(strings.TrimPrefix(auth, "Bearer "))
+                }
+            }
+        })
+    }
+    // Navigate; the SPA will fire XHRs, triggering the handler above.
+    page.Goto(j.URL, scrapemate.WaitUntilDOMContentLoaded)
+    // ...
+}
+```
+
+**Threading constraint:** handlers registered via `OnRequest` / `OnResponse` are
+invoked synchronously in the browser event loop.  They must not perform blocking
+I/O or blocking Playwright calls (e.g. `Page.Eval`, `Response.AllHeaders`).
+Non-blocking operations — channel sends, `atomic` stores, mutex-guarded writes
+— are safe.
+
+The jshttp Playwright adapter implements `RequestHookProvider`.  Other adapters
+may not; the type assertion handles that gracefully.
+
+**Why not `AllHeaders()`?** `req.AllHeaders()` and `resp.AllHeaders()` issue a
+CDP protocol round-trip and block until the browser responds.  Calling them
+inside an event handler deadlocks the event loop.  The hooks in the jshttp
+adapter use `req.Headers()` / `resp.Headers()` instead, which return the headers
+already stored in memory — no round-trip, no deadlock.
+
 ## Installation
 
 ```

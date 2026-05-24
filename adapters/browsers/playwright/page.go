@@ -10,6 +10,7 @@ import (
 )
 
 var _ scrapemate.BrowserPage = (*Page)(nil)
+var _ scrapemate.RequestHookProvider = (*Page)(nil)
 var _ scrapemate.Locator = (*Locator)(nil)
 
 // Page wraps a playwright.Page and implements scrapemate.BrowserPage.
@@ -109,6 +110,43 @@ func (p *Page) WaitForTimeout(timeout time.Duration) {
 // Locator creates a locator for finding elements matching the selector.
 func (p *Page) Locator(selector string) scrapemate.Locator {
 	return &Locator{locator: p.page.Locator(selector)}
+}
+
+// OnRequest implements scrapemate.RequestHookProvider.
+//
+// The handler is invoked for every outgoing browser request. url is the full
+// request URL; headers is a map of request headers with lower-cased keys.
+//
+// Internally this calls p.page.OnRequest and reads headers via req.Headers()
+// (synchronous, no Playwright protocol round-trip).  req.AllHeaders() is
+// intentionally NOT used here: AllHeaders() blocks on a CDP response while the
+// event loop is already inside a dispatch callback, which deadlocks the handler.
+// req.Headers() returns the headers that were set at request creation time,
+// which is sufficient for capturing Authorization headers added by SPA fetch
+// wrappers.
+func (p *Page) OnRequest(handler func(url string, headers map[string]string)) {
+	p.page.OnRequest(func(req playwright.Request) {
+		// req.Headers() is non-blocking (returns the headers stored at request
+		// creation time without a CDP round-trip). Safe to call inside an event
+		// handler. req.AllHeaders() would deadlock here.
+		handler(req.URL(), req.Headers())
+	})
+}
+
+// OnResponse implements scrapemate.RequestHookProvider.
+//
+// The handler is invoked for every browser response. url is the response URL;
+// statusCode is the HTTP status; headers is a map of response headers with
+// lower-cased keys.
+//
+// Internally this calls p.page.OnResponse and reads headers via resp.Headers()
+// (synchronous, no Playwright protocol round-trip). resp.AllHeaders() is
+// intentionally NOT used: same deadlock risk as in OnRequest.
+func (p *Page) OnResponse(handler func(url string, statusCode int, headers map[string]string)) {
+	p.page.OnResponse(func(resp playwright.Response) {
+		// resp.Headers() is non-blocking. resp.AllHeaders() would deadlock.
+		handler(resp.URL(), resp.Status(), resp.Headers())
+	})
 }
 
 // Close closes the page.
