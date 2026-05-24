@@ -401,10 +401,24 @@ func buildChromiumArgs(disableImages, disableSingleProcess bool) []string {
 	return args
 }
 
+// launchArgsFor returns the launch flags for the given browser engine.
+// The Chromium flag list (--no-sandbox, --single-process, --disable-gpu, …) is
+// Chromium-specific and must NOT be passed to Firefox or WebKit: those engines
+// reject or mis-handle Chromium CLI flags and can hang on the first NewPage.
+// Firefox/WebKit therefore launch with Playwright's engine defaults (no args).
+func launchArgsFor(browserType string, disableImages, disableSingleProcess bool) []string {
+	switch browserType {
+	case "firefox", "webkit":
+		return nil
+	default: // chromium (also the empty-string default)
+		return buildChromiumArgs(disableImages, disableSingleProcess)
+	}
+}
+
 func newBrowser(pw *playwright.Playwright, headless, disableImages bool, proxyPool *ProxyPool, ua, browserType, executablePath string, disableSingleProcess bool) (*browser, error) {
 	opts := playwright.BrowserTypeLaunchOptions{
 		Headless: playwright.Bool(headless),
-		Args:     buildChromiumArgs(disableImages, disableSingleProcess),
+		Args:     launchArgsFor(browserType, disableImages, disableSingleProcess),
 	}
 	if executablePath != "" {
 		opts.ExecutablePath = playwright.String(executablePath)

@@ -387,3 +387,49 @@ func TestIntegration_ProxyProvider_BackwardCompat(t *testing.T) {
 		t.Errorf("countingProxy.Count() = %d for plain job, want 0", proxy.Count())
 	}
 }
+
+// TestIntegration_Firefox_PerJobProxy isolates whether STANDARD Playwright
+// Firefox can open a page via the per-job-proxy (multi-context) path at all,
+// against a harmless LOCAL server (no jameda, no Cloudflare). If NewPage hangs
+// here, the cause is jshttp passing Chromium-only launch args to Firefox.
+// Run with a short -timeout so a hang fails fast instead of blocking 10 minutes.
+func TestIntegration_Firefox_PerJobProxy(t *testing.T) {
+	proxy := newCountingProxy(t)
+	target := newFetchTarget(t, "ff-isolation")
+
+	f, err := New(JSFetcherOptions{
+		Headless:             true,
+		DisableImages:        true,
+		PoolSize:             1,
+		BrowserType:          "firefox",
+		DisableSingleProcess: true,
+	})
+	if err != nil {
+		t.Fatalf("New(firefox): %v", err)
+	}
+	t.Cleanup(func() { _ = f.Close() })
+
+	job := &proxyProviderJob{
+		Job: scrapemate.Job{
+			ID:      "ff-isolation-1",
+			Method:  http.MethodGet,
+			URL:     target.URL,
+			Timeout: 30 * time.Second,
+		},
+		proxyURL: proxy.proxyURL(),
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	resp := f.Fetch(ctx, job)
+	if resp.Error != nil {
+		t.Fatalf("firefox per-job-proxy fetch error: %v", resp.Error)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("StatusCode = %d, want 200", resp.StatusCode)
+	}
+	if proxy.Count() == 0 {
+		t.Error("countingProxy.Count() == 0: traffic did not flow through per-job proxy")
+	}
+}
