@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `RequestHookProvider` interface — optional capability for `BrowserPage`
+  implementations that support intercepting outgoing browser requests and
+  responses.  Implement `OnRequest` and `OnResponse` on your page wrapper to
+  opt in.  Consumers check for the capability via a type assertion:
+  `if hook, ok := page.(scrapemate.RequestHookProvider); ok { hook.OnRequest(...) }`.
+  Backward-compatible — existing `BrowserPage` implementations that do not add
+  these methods are unaffected; the type assertion simply returns `false`.
+  Useful for capturing auth tokens emitted by SPA fetch wrappers (e.g. a job
+  that needs the `Authorization: Bearer` header from XHRs initiated by a
+  JavaScript SPA).
+- `(*playwright.Page).OnRequest` / `(*playwright.Page).OnResponse` — the jshttp
+  Playwright adapter now implements `RequestHookProvider`.  Handlers receive the
+  request URL and a lower-cased header map.  Headers are read via the
+  non-blocking `req.Headers()` / `resp.Headers()` (no CDP round-trip, safe to
+  call inside event handlers).  `req.AllHeaders()` / `resp.AllHeaders()` are
+  intentionally avoided because they block on a protocol response while the
+  event loop is inside a dispatch callback, which would deadlock the handler.
+
 ### Fixed
 
 - `jshttp`: `page.Close()` and `BrowserContext.Close()` are now time-bounded
