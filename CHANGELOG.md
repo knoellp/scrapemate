@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `jshttp`: `page.Close()` and `BrowserContext.Close()` are now time-bounded
+  (5 s default via `closeWithTimeout`). Previously, a wedged Playwright driver
+  (e.g. EPIPE after a Firefox crash) caused an unbounded block in `Close`,
+  which propagated through `wg.Wait()` and prevented `app.Start` from returning
+  even after context cancellation. Now the cleanup goroutine is abandoned after
+  the deadline and the worker goroutine is freed. Backward-compatible — no
+  API change; in the normal (healthy) case Close returns within milliseconds
+  and the deadline is never reached.
+
 - `jshttp`: Chromium launch args (e.g. `--no-sandbox`, `--single-process`,
   `--disable-gpu`) are now passed only when the browser engine is Chromium.
   Firefox and WebKit receive no custom launch args (Playwright engine defaults).
