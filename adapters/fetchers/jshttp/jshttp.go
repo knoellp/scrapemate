@@ -3,12 +3,36 @@ package jshttp
 import (
 	"context"
 	"net/url"
+	"time"
 
 	"github.com/playwright-community/playwright-go"
 
 	"github.com/gosom/scrapemate"
 	playwrightadapter "github.com/gosom/scrapemate/adapters/browsers/playwright"
 )
+
+// closeTimeout is the maximum time allowed for a Playwright page.Close() or
+// BrowserContext.Close() call before the cleanup is abandoned.  In normal
+// operation Close returns within a few milliseconds.  When the browser driver
+// wedges (e.g. EPIPE after Firefox restart), an unbounded Close would block the
+// worker goroutine indefinitely and prevent app.Start from returning, even after
+// context cancellation.  5 s is long enough for any healthy close and short
+// enough to keep the retry loop from stalling.
+const closeTimeout = 5 * time.Second
+
+// closeWithTimeout runs closer in a background goroutine and returns when it
+// finishes or when d elapses, whichever comes first.  If the deadline fires the
+// goroutine and any associated browser context are leaked, but the calling
+// goroutine is freed — an acceptable trade-off when the alternative is an
+// indefinite hang.
+func closeWithTimeout(closer func() error, d time.Duration) {
+	done := make(chan struct{})
+	go func() { _ = closer(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(d):
+	}
+}
 
 var _ scrapemate.HTTPFetcher = (*jsFetch)(nil)
 
@@ -229,7 +253,7 @@ func (o *jsFetch) fetchDefault(ctx context.Context, job scrapemate.IJob) scrapem
 
 	defer func() {
 		if o.pageReuseLimit == 0 || br.page0Usage >= o.pageReuseLimit {
-			_ = page.Close()
+			closeWithTimeout(func() error { return page.Close() }, closeTimeout)
 
 			br.page0Usage = 0
 		}
@@ -280,14 +304,14 @@ func (o *jsFetch) fetchWithJobProxy(ctx context.Context, job scrapemate.IJob, jo
 		return scrapemate.Response{Error: err}
 	}
 
-	defer jobCtx.Close()
+	defer closeWithTimeout(func() error { return jobCtx.Close() }, closeTimeout)
 
 	page, err := jobCtx.NewPage()
 	if err != nil {
 		return scrapemate.Response{Error: err}
 	}
 
-	defer page.Close()
+	defer closeWithTimeout(func() error { return page.Close() }, closeTimeout)
 
 	if job.GetTimeout() > 0 {
 		page.SetDefaultTimeout(float64(job.GetTimeout().Milliseconds()))
