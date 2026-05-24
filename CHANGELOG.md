@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `jshttp`: Chromium launch args (e.g. `--no-sandbox`, `--single-process`,
+  `--disable-gpu`) are now passed only when the browser engine is Chromium.
+  Firefox and WebKit receive no custom launch args (Playwright engine defaults).
+  Previously, Chromium flags were forwarded to all engines, causing Firefox to
+  hang on the first `NewPage` call.
+
 ### Added
 
 - `ProxyProvider` interface — optional capability for jobs that need a per-job
